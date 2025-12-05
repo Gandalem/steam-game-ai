@@ -8,6 +8,7 @@ import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score  # 정확도 계산을 위해 추가
 
 # ------------------------------------------------
 # 1. 페이지 설정 및 스타일링
@@ -55,20 +56,20 @@ def load_data():
     df['Price_Range'] = pd.Categorical(df['Price_Clean'].apply(get_price_category), categories=price_order, ordered=True)
 
     # -----------------------------------------------------------
-    # [최종 수정] 비(非)게임 소프트웨어 및 배포 방식 태그 완전 제거
+    # [필터링] 비(非)게임 소프트웨어 및 배포 방식 태그 완전 제거
     # -----------------------------------------------------------
     df = df.dropna(subset=['주요 태그 (상위 5개)'])
     
     # 1. 리스트 변환
     df['Tags_List'] = df['주요 태그 (상위 5개)'].astype(str).apply(lambda x: [tag.strip() for tag in x.split(',')])
 
-    # 2. 제외할 태그 목록 (게임 개발, 교육 등 추가됨)
+    # 2. 제외할 태그 목록 (게임 개발, 교육 등 포함)
     banned_tags = [
         '무료 플레이', '앞서 해보기', 
         '애니메이션 모델', '애니메이션과 모델링', '애니메이션 및 모델링', 
         '디자인과 일러스트레이션', '사진 편집', '동영상 제작', '동영상제작', 
         '유틸리티', '소프트웨어', '웹 퍼블리싱', '오디오 제작',
-        '게임 개발', '소프트웨어 교육'  # <--- 요청하신 태그 추가 완료
+        '게임 개발', '소프트웨어 교육' 
     ]
 
     # 3. 제외 태그 필터링 함수
@@ -97,29 +98,39 @@ def load_data():
 df, X, y, mlb, threshold = load_data()
 
 # ------------------------------------------------
-# 3. 모델 학습 (백그라운드)
+# 3. 모델 학습 (정확도 계산 포함)
 # ------------------------------------------------
 if df is not None:
+    # 정확도 계산을 위해 데이터를 8:2로 나눕니다.
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    
     model = XGBClassifier(eval_metric='logloss', random_state=42)
-    model.fit(X, y)
+    model.fit(X_train, y_train) # 학습용 데이터로 공부
+    
+    # 테스트 데이터로 채점 (정확도 계산)
+    y_pred = model.predict(X_test)
+    acc_score = accuracy_score(y_test, y_pred)
 
     # ------------------------------------------------
-    # 4. KPI 대시보드
+    # 4. KPI 대시보드 (정확도 추가됨)
     # ------------------------------------------------
     st.divider()
-    col1, col2, col3, col4 = st.columns(4)
+    # 컬럼을 5개로 늘려서 정확도 자리를 만들었습니다.
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("🎮 순수 게임 데이터 수", f"{len(df):,}개")
+        st.metric("🤖 AI 예측 정확도", f"{acc_score*100:.1f}%") # 정확도 표시
     with col2:
-        avg_success = df['Success'].mean() * 100
-        st.metric("🏆 시장 평균 성공률", f"{avg_success:.1f}%")
+        st.metric("🎮 순수 게임 수", f"{len(df):,}개")
     with col3:
+        avg_success = df['Success'].mean() * 100
+        st.metric("🏆 평균 성공률", f"{avg_success:.1f}%")
+    with col4:
         if not df.empty:
             best_price_range = df.groupby('Price_Range')['Success'].mean().idxmax()
             st.metric("💎 황금 가격대", best_price_range)
-    with col4:
-        st.metric("🔥 대박 기준 (동접자)", f"{int(threshold):,}명 ↑")
+    with col5:
+        st.metric("🔥 대박 기준 (동접)", f"{int(threshold):,}명 ↑")
     
     st.divider()
 
@@ -130,6 +141,7 @@ if df is not None:
 
     with col_main:
         st.subheader("🗺️ 장르 x 가격대 성공 지도")
+        st.caption("개발 툴 및 교육용 소프트웨어는 제외되었습니다.")
         
         # 데이터 가공
         df_exploded = df.explode('Tags_List')
@@ -234,4 +246,3 @@ if df is not None:
             st.sidebar.success("🎉 시장 진입 추천!")
         else:
             st.sidebar.warning("⚠️ 가격/장르 재검토 필요")
-
