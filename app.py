@@ -68,7 +68,7 @@ if X is not None:
     # ------------------------------------------------
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    model = XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42)
+    model = XGBClassifier(eval_metric='logloss', random_state=42)
     model.fit(X_train, y_train)
     
     # 성능 지표 계산
@@ -139,4 +139,5 @@ if X is not None:
     st.write("어떤 요소가 게임 성공에 가장 큰 영향을 미치는가?")
     
     importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False).head(10)
+
     st.bar_chart(importances)
