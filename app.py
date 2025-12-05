@@ -8,7 +8,7 @@ import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score  # 정확도 계산을 위해 추가
+from sklearn.metrics import accuracy_score
 
 # ------------------------------------------------
 # 1. 페이지 설정 및 스타일링
@@ -63,7 +63,7 @@ def load_data():
     # 1. 리스트 변환
     df['Tags_List'] = df['주요 태그 (상위 5개)'].astype(str).apply(lambda x: [tag.strip() for tag in x.split(',')])
 
-    # 2. 제외할 태그 목록 (게임 개발, 교육 등 포함)
+    # 2. 제외할 태그 목록
     banned_tags = [
         '무료 플레이', '앞서 해보기', 
         '애니메이션 모델', '애니메이션과 모델링', '애니메이션 및 모델링', 
@@ -101,25 +101,22 @@ df, X, y, mlb, threshold = load_data()
 # 3. 모델 학습 (정확도 계산 포함)
 # ------------------------------------------------
 if df is not None:
-    # 정확도 계산을 위해 데이터를 8:2로 나눕니다.
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
     model = XGBClassifier(eval_metric='logloss', random_state=42)
-    model.fit(X_train, y_train) # 학습용 데이터로 공부
+    model.fit(X_train, y_train)
     
-    # 테스트 데이터로 채점 (정확도 계산)
     y_pred = model.predict(X_test)
     acc_score = accuracy_score(y_test, y_pred)
 
     # ------------------------------------------------
-    # 4. KPI 대시보드 (정확도 추가됨)
+    # 4. KPI 대시보드 (황금 가격대 수정됨)
     # ------------------------------------------------
     st.divider()
-    # 컬럼을 5개로 늘려서 정확도 자리를 만들었습니다.
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("🤖 AI 예측 정확도", f"{acc_score*100:.1f}%") # 정확도 표시
+        st.metric("🤖 AI 예측 정확도", f"{acc_score*100:.1f}%")
     with col2:
         st.metric("🎮 순수 게임 수", f"{len(df):,}개")
     with col3:
@@ -127,8 +124,15 @@ if df is not None:
         st.metric("🏆 평균 성공률", f"{avg_success:.1f}%")
     with col4:
         if not df.empty:
-            best_price_range = df.groupby('Price_Range')['Success'].mean().idxmax()
-            st.metric("💎 황금 가격대", best_price_range)
+            # [수정됨] 무료(Free) 구간을 제외한 데이터만 필터링
+            df_paid = df[df['Price_Range'] != '무료 (Free)']
+            
+            if not df_paid.empty:
+                # 유료 구간 중에서 성공률 1등 찾기
+                best_price_range = df_paid.groupby('Price_Range', observed=True)['Success'].mean().idxmax()
+                st.metric("💎 황금 가격대 (유료)", best_price_range)
+            else:
+                st.metric("💎 황금 가격대", "-")
     with col5:
         st.metric("🔥 대박 기준 (동접)", f"{int(threshold):,}명 ↑")
     
@@ -143,16 +147,13 @@ if df is not None:
         st.subheader("🗺️ 장르 x 가격대 성공 지도")
         st.caption("개발 툴 및 교육용 소프트웨어는 제외되었습니다.")
         
-        # 데이터 가공
         df_exploded = df.explode('Tags_List')
         
-        # 상위 15개 태그 추출
         top_15_tags = df_exploded['Tags_List'].value_counts().head(15).index
         df_filtered = df_exploded[df_exploded['Tags_List'].isin(top_15_tags)]
         
         pivot_table = df_filtered.pivot_table(index='Tags_List', columns='Price_Range', values='Success', aggfunc='mean')
         
-        # Plotly 히트맵
         fig_heatmap = px.imshow(
             pivot_table,
             labels=dict(x="가격대", y="장르", color="성공률"),
@@ -173,7 +174,7 @@ if df is not None:
             selected_tag = st.selectbox("분석할 장르를 선택하세요", top_tags, index=0)
             
             tag_data = df_exploded[df_exploded['Tags_List'] == selected_tag]
-            tag_analysis = tag_data.groupby('Price_Range')['Success'].mean().reset_index()
+            tag_analysis = tag_data.groupby('Price_Range', observed=False)['Success'].mean().reset_index()
             tag_analysis['Success'] = tag_analysis['Success'] * 100
             
             fig_bar = px.bar(
