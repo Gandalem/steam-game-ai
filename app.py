@@ -86,7 +86,7 @@ if X is not None:
     
     # 상위 20개 인기 태그만 추출해서 선택지로 제공
     top_tags = pd.Series([tag for tags in mlb.inverse_transform(X.iloc[:, 1:].values) for tag in tags]).value_counts().head(20).index.tolist()
-    user_tags = st.sidebar.multiselect("게임 장르/태그 선택", top_tags, default=['Action', 'Indie'])
+    user_tags = st.sidebar.multiselect("게임 장르/태그 선택", top_tags, default=top_tags[:2])
 
     if st.sidebar.button("🚀 흥행 예측하기"):
         # 입력 데이터 변환
@@ -141,3 +141,4 @@ if X is not None:
     importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False).head(10)
 
     st.bar_chart(importances)
+
