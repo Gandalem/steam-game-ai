@@ -130,7 +130,6 @@ if df is not None:
 
     with col_main:
         st.subheader("🗺️ 장르 x 가격대 성공 지도")
-        st.caption("개발 툴 및 교육용 소프트웨어는 제외되었습니다.")
         
         # 데이터 가공
         df_exploded = df.explode('Tags_List')
@@ -235,3 +234,4 @@ if df is not None:
             st.sidebar.success("🎉 시장 진입 추천!")
         else:
             st.sidebar.warning("⚠️ 가격/장르 재검토 필요")
+
