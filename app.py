@@ -8,6 +8,8 @@ import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 
 # ------------------------------------------------
@@ -98,25 +100,63 @@ def load_data():
 df, X, y, mlb, threshold = load_data()
 
 # ------------------------------------------------
-# 3. 모델 학습 (정확도 계산 포함)
+# 3. 모델 학습 (3가지 모델 모두 학습)
 # ------------------------------------------------
-if df is not None:
+# 캐싱을 사용해 매번 다시 학습하지 않도록 설정
+@st.cache_resource
+def train_all_models(X, y):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    model = XGBClassifier(eval_metric='logloss', random_state=42)
-    model.fit(X_train, y_train)
+    # 사용할 모델 3가지 정의
+    models = {
+        "XGBoost (최고 성능)": XGBClassifier(eval_metric='logloss', random_state=42),
+        "Random Forest (안정적)": RandomForestClassifier(n_estimators=100, random_state=42),
+        "Logistic Regression (기본)": LogisticRegression(max_iter=1000)
+    }
     
-    y_pred = model.predict(X_test)
-    acc_score = accuracy_score(y_test, y_pred)
+    trained_models = {}
+    accuracies = {}
+    
+    # 반복문으로 학습 진행
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        
+        trained_models[name] = model
+        accuracies[name] = acc
+        
+    return trained_models, accuracies
+
+if df is not None:
+    # 모델 3개 한꺼번에 학습
+    models_dict, acc_dict = train_all_models(X, y)
 
     # ------------------------------------------------
-    # 4. KPI 대시보드 (황금 가격대 수정됨)
+    # [New] 사이드바: 알고리즘 선택 기능
+    # ------------------------------------------------
+    st.sidebar.header("⚙️ 분석 모델 설정")
+    selected_model_name = st.sidebar.selectbox(
+        "사용할 AI 알고리즘 선택",
+        list(models_dict.keys())
+    )
+    
+    # 선택된 모델과 그 모델의 정확도 가져오기
+    current_model = models_dict[selected_model_name]
+    current_acc = acc_dict[selected_model_name]
+    
+    st.sidebar.caption(f"이 모델의 예측 정확도: **{current_acc*100:.1f}%**")
+    st.sidebar.divider()
+
+    # ------------------------------------------------
+    # 4. KPI 대시보드 (선택된 모델의 정확도 표시)
     # ------------------------------------------------
     st.divider()
     col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric("🤖 AI 예측 정확도", f"{acc_score*100:.1f}%")
+        # [Dynamic] 사용자가 선택한 모델의 정확도가 여기에 뜸
+        st.metric("🤖 AI 예측 정확도", f"{current_acc*100:.1f}%", help=f"사용 중인 모델: {selected_model_name}")
     with col2:
         st.metric("🎮 순수 게임 수", f"{len(df):,}개")
     with col3:
@@ -124,11 +164,8 @@ if df is not None:
         st.metric("🏆 평균 성공률", f"{avg_success:.1f}%")
     with col4:
         if not df.empty:
-            # [수정됨] 무료(Free) 구간을 제외한 데이터만 필터링
             df_paid = df[df['Price_Range'] != '무료 (Free)']
-            
             if not df_paid.empty:
-                # 유료 구간 중에서 성공률 1등 찾기
                 best_price_range = df_paid.groupby('Price_Range', observed=True)['Success'].mean().idxmax()
                 st.metric("💎 황금 가격대 (유료)", best_price_range)
             else:
@@ -148,10 +185,8 @@ if df is not None:
         st.caption("개발 툴 및 교육용 소프트웨어는 제외되었습니다.")
         
         df_exploded = df.explode('Tags_List')
-        
         top_15_tags = df_exploded['Tags_List'].value_counts().head(15).index
         df_filtered = df_exploded[df_exploded['Tags_List'].isin(top_15_tags)]
-        
         pivot_table = df_filtered.pivot_table(index='Tags_List', columns='Price_Range', values='Success', aggfunc='mean')
         
         fig_heatmap = px.imshow(
@@ -168,34 +203,22 @@ if df is not None:
 
     with col_side:
         st.subheader("🔍 장르별 상세 탐색")
-        
         top_tags = top_15_tags.tolist()
         if top_tags:
             selected_tag = st.selectbox("분석할 장르를 선택하세요", top_tags, index=0)
-            
             tag_data = df_exploded[df_exploded['Tags_List'] == selected_tag]
             tag_analysis = tag_data.groupby('Price_Range', observed=False)['Success'].mean().reset_index()
             tag_analysis['Success'] = tag_analysis['Success'] * 100
             
             fig_bar = px.bar(
-                tag_analysis, 
-                x='Price_Range', 
-                y='Success', 
-                color='Success',
-                color_continuous_scale='Greens',
-                title=f"[{selected_tag}] 가격대별 성공률",
-                text_auto='.1f'
+                tag_analysis, x='Price_Range', y='Success', color='Success',
+                color_continuous_scale='Greens', title=f"[{selected_tag}] 가격대별 성공률", text_auto='.1f'
             )
-            fig_bar.update_layout(
-                xaxis_title=None, 
-                yaxis_title="성공률 (%)", 
-                showlegend=False,
-                height=350
-            )
+            fig_bar.update_layout(xaxis_title=None, yaxis_title="성공률 (%)", showlegend=False, height=350)
             st.plotly_chart(fig_bar, use_container_width=True)
 
     # ------------------------------------------------
-    # 6. 사이드바 예측 시뮬레이터
+    # 6. 사이드바 예측 시뮬레이터 (로딩바 추가됨)
     # ------------------------------------------------
     st.sidebar.header("🕹️ 내 게임 시뮬레이션")
     
@@ -208,18 +231,23 @@ if df is not None:
     default_tags = all_top_tags[:2] if len(all_top_tags) >= 2 else all_top_tags
     user_tags = st.sidebar.multiselect("", all_top_tags, default=default_tags, label_visibility="collapsed")
 
+    # [New] 버튼 클릭 시 로딩바 실행
     if st.sidebar.button("🚀 예측 실행 (Click)", type="primary"):
-        with st.spinner('AI 엔진 가동 중...'):
-            time.sleep(0.8)
+        # 로딩바 (Spinner)
+        with st.spinner('AI가 데이터를 분석 중입니다...'):
+            time.sleep(1.2) # 사용자가 로딩을 느끼도록 약간의 딜레이 추가
             
+            # 입력 데이터 변환
             input_data = pd.DataFrame(0, index=[0], columns=X.columns)
             input_data['Price_Clean'] = user_price
             for tag in user_tags:
                 if tag in input_data.columns:
                     input_data[tag] = 1
             
-            prob = model.predict_proba(input_data)[0][1]
+            # 선택된 모델로 예측 수행
+            prob = current_model.predict_proba(input_data)[0][1]
         
+        # 결과 표시
         st.sidebar.divider()
         st.sidebar.subheader("분석 결과")
         
