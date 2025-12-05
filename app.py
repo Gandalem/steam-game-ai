@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px  # 인터랙티브 차트용
+import plotly.express as px
 import plotly.graph_objects as go
 import re
 import time
@@ -14,7 +14,6 @@ from xgboost import XGBClassifier
 # ------------------------------------------------
 st.set_page_config(page_title="Steam Market Compass", layout="wide", page_icon="🧭")
 
-# CSS로 여백 및 폰트 조정 (더 깔끔하게)
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -44,7 +43,7 @@ def load_data():
 
     df['Price_Clean'] = df['최종 가격'].apply(clean_price)
 
-    # 가격 구간(Category) 생성 - 깔끔한 라벨링
+    # 가격 구간(Category) 생성
     def get_price_category(price):
         if price == 0: return '무료 (Free)'
         elif price < 15000: return '저가 (~1.5만원)'
@@ -52,13 +51,30 @@ def load_data():
         elif price < 60000: return '준고가 (3.5~6만원)'
         else: return '고가 (6만원 이상)'
     
-    # 순서 정렬을 위한 Categorical Type 설정
     price_order = ['무료 (Free)', '저가 (~1.5만원)', '중가 (1.5~3.5만원)', '준고가 (3.5~6만원)', '고가 (6만원 이상)']
     df['Price_Range'] = pd.Categorical(df['Price_Clean'].apply(get_price_category), categories=price_order, ordered=True)
 
-    # 태그 전처리
+    # -----------------------------------------------------------
+    # [수정됨] 태그 전처리 및 불필요한 태그 제거 로직
+    # -----------------------------------------------------------
     df = df.dropna(subset=['주요 태그 (상위 5개)'])
+    
+    # 1. 먼저 리스트로 변환
     df['Tags_List'] = df['주요 태그 (상위 5개)'].astype(str).apply(lambda x: [tag.strip() for tag in x.split(',')])
+
+    # 2. 제외할 태그 목록 정의 (사용자 요청 반영)
+    banned_tags = ['무료 플레이', '앞서 해보기', '애니메이션 모델', '디자인과 일러스트레이션']
+
+    # 3. 제외 태그 필터링 함수
+    def filter_tags(tags):
+        return [tag for tag in tags if tag not in banned_tags]
+
+    df['Tags_List'] = df['Tags_List'].apply(filter_tags)
+
+    # 4. 태그가 다 지워져서 빈 리스트가 된 행은 삭제 (데이터 품질 유지)
+    df = df[df['Tags_List'].map(len) > 0]
+
+    # -----------------------------------------------------------
 
     mlb = MultiLabelBinarizer()
     tags_encoded = mlb.fit_transform(df['Tags_List'])
@@ -83,7 +99,7 @@ if df is not None:
     model.fit(X, y)
 
     # ------------------------------------------------
-    # 4. [New] KPI 대시보드 (핵심 지표 카드)
+    # 4. KPI 대시보드
     # ------------------------------------------------
     st.divider()
     col1, col2, col3, col4 = st.columns(4)
@@ -91,43 +107,44 @@ if df is not None:
     with col1:
         st.metric("🎮 분석된 게임 수", f"{len(df):,}개")
     with col2:
-        # 전체 평균 성공률
         avg_success = df['Success'].mean() * 100
         st.metric("🏆 시장 평균 성공률", f"{avg_success:.1f}%")
     with col3:
-        # 가장 성공률 높은 가격대
-        best_price_range = df.groupby('Price_Range')['Success'].mean().idxmax()
-        st.metric("💎 황금 가격대", best_price_range)
+        # 가장 성공률 높은 가격대 (데이터가 충분한 경우만)
+        if not df.empty:
+            best_price_range = df.groupby('Price_Range')['Success'].mean().idxmax()
+            st.metric("💎 황금 가격대", best_price_range)
     with col4:
-        # 성공 기준 (동접자)
         st.metric("🔥 대박 기준 (동접자)", f"{int(threshold):,}명 ↑")
     
     st.divider()
 
     # ------------------------------------------------
-    # 5. [New] 인터랙티브 히트맵 & 분석
+    # 5. 인터랙티브 히트맵
     # ------------------------------------------------
     col_main, col_side = st.columns([2, 1])
 
     with col_main:
         st.subheader("🗺️ 장르 x 가격대 성공 지도")
-        st.caption("마우스를 올려보세요! 색이 붉을수록 성공 확률이 높습니다.")
+        st.caption("불필요한 태그(무료 플레이 등)는 제외되었습니다.")
         
         # 데이터 가공
         df_exploded = df.explode('Tags_List')
+        
+        # 상위 15개 태그 추출
         top_15_tags = df_exploded['Tags_List'].value_counts().head(15).index
         df_filtered = df_exploded[df_exploded['Tags_List'].isin(top_15_tags)]
         
         pivot_table = df_filtered.pivot_table(index='Tags_List', columns='Price_Range', values='Success', aggfunc='mean')
         
-        # Plotly 인터랙티브 히트맵
+        # Plotly 히트맵
         fig_heatmap = px.imshow(
             pivot_table,
             labels=dict(x="가격대", y="장르", color="성공률"),
             x=pivot_table.columns,
             y=pivot_table.index,
-            text_auto=".0%", # 칸 안에 숫자 표시
-            color_continuous_scale="RdBu_r", # 빨강-파랑 (빨강이 높음)
+            text_auto=".0%",
+            color_continuous_scale="RdBu_r",
             aspect="auto"
         )
         fig_heatmap.update_layout(xaxis_title=None, yaxis_title=None)
@@ -136,66 +153,62 @@ if df is not None:
     with col_side:
         st.subheader("🔍 장르별 상세 탐색")
         
-        # 장르 선택
         top_tags = top_15_tags.tolist()
-        selected_tag = st.selectbox("분석할 장르를 선택하세요", top_tags, index=0)
-        
-        # 선택한 장르 데이터 필터링
-        tag_data = df_exploded[df_exploded['Tags_List'] == selected_tag]
-        tag_analysis = tag_data.groupby('Price_Range')['Success'].mean().reset_index()
-        tag_analysis['Success'] = tag_analysis['Success'] * 100
-        
-        # Plotly 막대 그래프
-        fig_bar = px.bar(
-            tag_analysis, 
-            x='Price_Range', 
-            y='Success', 
-            color='Success',
-            color_continuous_scale='Greens',
-            title=f"[{selected_tag}] 가격대별 성공률",
-            text_auto='.1f'
-        )
-        fig_bar.update_layout(
-            xaxis_title=None, 
-            yaxis_title="성공률 (%)", 
-            showlegend=False,
-            height=350
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        # 데이터가 있을 때만 위젯 표시
+        if top_tags:
+            selected_tag = st.selectbox("분석할 장르를 선택하세요", top_tags, index=0)
+            
+            tag_data = df_exploded[df_exploded['Tags_List'] == selected_tag]
+            tag_analysis = tag_data.groupby('Price_Range')['Success'].mean().reset_index()
+            tag_analysis['Success'] = tag_analysis['Success'] * 100
+            
+            fig_bar = px.bar(
+                tag_analysis, 
+                x='Price_Range', 
+                y='Success', 
+                color='Success',
+                color_continuous_scale='Greens',
+                title=f"[{selected_tag}] 가격대별 성공률",
+                text_auto='.1f'
+            )
+            fig_bar.update_layout(
+                xaxis_title=None, 
+                yaxis_title="성공률 (%)", 
+                showlegend=False,
+                height=350
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
     # ------------------------------------------------
-    # 6. [UX 개선] 사이드바 예측 시뮬레이터
+    # 6. 사이드바 예측 시뮬레이터
     # ------------------------------------------------
     st.sidebar.header("🕹️ 내 게임 시뮬레이션")
     
-    # 슬라이더로 가격 입력 (직관적)
     st.sidebar.write("💰 출시 가격 설정")
     user_price = st.sidebar.slider("", 0, 100000, 25000, step=1000, format="₩%d")
     
-    # 태그 선택
     all_top_tags = pd.Series([tag for tags in df['Tags_List'] for tag in tags]).value_counts().head(20).index.tolist()
+    
     st.sidebar.write("🏷️ 장르 선택 (최대 3개)")
-    user_tags = st.sidebar.multiselect("", all_top_tags, default=all_top_tags[:2], label_visibility="collapsed")
+    # 태그 선택 시 기본값이 리스트에 없으면 에러나므로 안전장치 마련
+    default_tags = all_top_tags[:2] if len(all_top_tags) >= 2 else all_top_tags
+    user_tags = st.sidebar.multiselect("", all_top_tags, default=default_tags, label_visibility="collapsed")
 
     if st.sidebar.button("🚀 예측 실행 (Click)", type="primary"):
         with st.spinner('AI 엔진 가동 중...'):
             time.sleep(0.8)
             
-            # 입력 데이터 변환
             input_data = pd.DataFrame(0, index=[0], columns=X.columns)
             input_data['Price_Clean'] = user_price
             for tag in user_tags:
                 if tag in input_data.columns:
                     input_data[tag] = 1
             
-            # 예측
             prob = model.predict_proba(input_data)[0][1]
         
-        # 결과 표시 (게이지 차트)
         st.sidebar.divider()
         st.sidebar.subheader("분석 결과")
         
-        # Plotly 게이지 차트
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = prob * 100,
