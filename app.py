@@ -55,15 +55,20 @@ def load_data():
     df['Price_Range'] = pd.Categorical(df['Price_Clean'].apply(get_price_category), categories=price_order, ordered=True)
 
     # -----------------------------------------------------------
-    # [수정됨] 태그 전처리 및 불필요한 태그 제거 로직
+    # [수정됨] 비(非)게임 소프트웨어 및 배포 방식 태그 제거
     # -----------------------------------------------------------
     df = df.dropna(subset=['주요 태그 (상위 5개)'])
     
     # 1. 먼저 리스트로 변환
     df['Tags_List'] = df['주요 태그 (상위 5개)'].astype(str).apply(lambda x: [tag.strip() for tag in x.split(',')])
 
-    # 2. 제외할 태그 목록 정의 (사용자 요청 반영)
-    banned_tags = ['무료 플레이', '앞서 해보기', '애니메이션 모델', '디자인과 일러스트레이션']
+    # 2. 제외할 태그 목록 정의 (게임이 아닌 유틸리티 제거)
+    banned_tags = [
+        '무료 플레이', '앞서 해보기', 
+        '애니메이션 모델', '애니메이션과 모델링', '애니메이션 및 모델링', # 모델링 툴
+        '디자인과 일러스트레이션', '사진 편집', '동영상 제작', '동영상제작', # 제작 툴
+        '유틸리티', '소프트웨어', '웹 퍼블리싱', '오디오 제작' # 기타 소프트웨어
+    ]
 
     # 3. 제외 태그 필터링 함수
     def filter_tags(tags):
@@ -71,9 +76,8 @@ def load_data():
 
     df['Tags_List'] = df['Tags_List'].apply(filter_tags)
 
-    # 4. 태그가 다 지워져서 빈 리스트가 된 행은 삭제 (데이터 품질 유지)
+    # 4. 태그가 다 지워져서 빈 리스트가 된 행은 삭제 (순수 게임만 남기기)
     df = df[df['Tags_List'].map(len) > 0]
-
     # -----------------------------------------------------------
 
     mlb = MultiLabelBinarizer()
@@ -105,12 +109,11 @@ if df is not None:
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("🎮 분석된 게임 수", f"{len(df):,}개")
+        st.metric("🎮 순수 게임 데이터 수", f"{len(df):,}개")
     with col2:
         avg_success = df['Success'].mean() * 100
         st.metric("🏆 시장 평균 성공률", f"{avg_success:.1f}%")
     with col3:
-        # 가장 성공률 높은 가격대 (데이터가 충분한 경우만)
         if not df.empty:
             best_price_range = df.groupby('Price_Range')['Success'].mean().idxmax()
             st.metric("💎 황금 가격대", best_price_range)
@@ -126,7 +129,7 @@ if df is not None:
 
     with col_main:
         st.subheader("🗺️ 장르 x 가격대 성공 지도")
-        st.caption("불필요한 태그(무료 플레이 등)는 제외되었습니다.")
+        st.caption("소프트웨어(사진편집, 동영상툴 등)는 제외된 순수 게임 분석입니다.")
         
         # 데이터 가공
         df_exploded = df.explode('Tags_List')
@@ -154,7 +157,6 @@ if df is not None:
         st.subheader("🔍 장르별 상세 탐색")
         
         top_tags = top_15_tags.tolist()
-        # 데이터가 있을 때만 위젯 표시
         if top_tags:
             selected_tag = st.selectbox("분석할 장르를 선택하세요", top_tags, index=0)
             
@@ -190,7 +192,6 @@ if df is not None:
     all_top_tags = pd.Series([tag for tags in df['Tags_List'] for tag in tags]).value_counts().head(20).index.tolist()
     
     st.sidebar.write("🏷️ 장르 선택 (최대 3개)")
-    # 태그 선택 시 기본값이 리스트에 없으면 에러나므로 안전장치 마련
     default_tags = all_top_tags[:2] if len(all_top_tags) >= 2 else all_top_tags
     user_tags = st.sidebar.multiselect("", all_top_tags, default=default_tags, label_visibility="collapsed")
 
