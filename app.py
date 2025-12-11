@@ -7,7 +7,7 @@ import json
 # 설정: Azure Function URL (로컬 테스트 시 보통 http://localhost:7071/api/함수이름)
 # 배포 후에는 실제 Azure URL로 변경해야 합니다.
 # -----------------------------------------------------------------------------
-AZURE_FUNCTION_URL = "https://stu456-game-api.azurewebsites.net/api/httptrigger1" 
+AZURE_FUNCTION_URL = "https://stu456-game-api.azurewebsites.net/api/HttpTrigger1?code=XQwIs25aJ_SRQYnvHFj7H8i1380Oq0qAMovk5xiGi7FjAzFu5xt94w==" 
 # 주의: Azure Function 함수 이름이 HttpTrigger1 이라고 가정함
 
 st.set_page_config(layout="wide", page_title="GameDev AI: Success Predictor")
@@ -107,3 +107,4 @@ with col3:
 
     if final_score > 0:
         st.info(f"Analysis based on competitor's **{steam_players:,}** concurrent players.")
+
