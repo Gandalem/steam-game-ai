@@ -143,7 +143,7 @@ with col3:
             try:
                 # Azure 함수 호출
                 payload = {"model": model_choice, "budget": budget, "genre": genre, "competitor_id": competitor_id}
-                response = requests.post(AZURE_FUNCTION_URL, json=payload, timeout=5)
+                response = requests.post(AZURE_FUNCTION_URL, json=payload, timeout=30)
                 
                 if response.status_code == 200:
                     result = response.json()
@@ -193,5 +193,6 @@ with st.expander("📚 모델 학습 및 성능 이력 (History)", expanded=True
         "정확도 (Accuracy)": ["98.2%", "95.1%", "88.5%", "97.8%", "분석 대기 중..."],
         "상태": ["학습 완료", "학습 완료", "학습 완료", "배포 완료", "준비"]
     })
-    st.dataframe(df_history, use_container_width=True, hide_index=True)
+    st.dataframe(df_history, hide_index=True)
+
 
