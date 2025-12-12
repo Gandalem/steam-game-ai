@@ -8,7 +8,7 @@ import numpy as np
 # ⚙️ 설정 & Azure 연결
 # (배포했던 Azure 주소가 있다면 여기에 그대로 두세요)
 # -----------------------------------------------------------------------------
-AZURE_FUNCTION_URL = "https://mygameapi-final.azurewebsites.net/api/HttpTrigger1" 
+AZURE_FUNCTION_URL = "https://mygameapi-final.azurewebsites.net/api/HttpTrigger1?code=dimrboKqUnOwX2gqXq0tsRtpL51E_uaomnSrooi7HcAZAzFugGKUDw==" 
 
 st.set_page_config(layout="wide", page_title="게임 성공 예측 AI")
 
@@ -194,6 +194,7 @@ with st.expander("📚 모델 학습 및 성능 이력 (History)", expanded=True
         "상태": ["학습 완료", "학습 완료", "학습 완료", "배포 완료", "준비"]
     })
     st.dataframe(df_history, hide_index=True)
+
 
 
 
